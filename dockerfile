@@ -1,0 +1,32 @@
+FROM python:3.11-slim
+
+# Prevent Python from writing .pyc files
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Prevent Python output from being buffered
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better Docker layer caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy the project
+COPY . .
+
+# Expose Gunicorn port inside the container
+EXPOSE 8010
+
+# Start Django
+CMD ["gunicorn", "gallery.wsgi:application", "--bind", "0.0.0.0:8010"]

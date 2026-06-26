@@ -1,0 +1,86 @@
+version: "3.9"
+
+services:
+  gallery_postgres:
+    image: postgres:15
+    container_name: gallery_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gallery_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - gallery_pgdata:/var/lib/postgresql/data
+    networks:
+      - gallery_network
+
+  gallery_app:
+    build: .
+    container_name: gallery_app
+    restart: unless-stopped
+
+    command: >
+      sh -c "
+      echo 'Waiting for PostgreSQL...';
+      until nc -z gallery_postgres 5432;
+      do
+        sleep 2;
+      done;
+      echo 'PostgreSQL is ready!';
+      python manage.py migrate --noinput &&
+      python manage.py collectstatic --noinput &&
+      gunicorn gallery.wsgi:application --bind 0.0.0.0:8010
+      "
+
+    environment:
+      DB_NAME: gallery_db
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_HOST: gallery_postgres
+      DB_PORT: 5432
+
+    depends_on:
+      - gallery_postgres
+
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+
+    expose:
+      - "8010"
+
+    networks:
+      - gallery_network
+      - root_backend_network
+
+  gallery_nginx:
+    image: nginx:latest
+    container_name: gallery_nginx
+    restart: unless-stopped
+
+    depends_on:
+      - gallery_app
+
+    ports:
+      - "50011:80"
+
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_volume:/static
+      - media_volume:/media
+
+    networks:
+      - gallery_network
+      - root_backend_network
+
+volumes:
+  gallery_pgdata:
+  static_volume:
+  media_volume:
+
+networks:
+  gallery_network:
+    driver: bridge
+
+  root_backend_network:
+    external: true
